@@ -29,6 +29,9 @@
     let toggleButton = null;
     let styleTagAdded = false;
     let recalcQueued = false;
+    let recalcTimer = 0;
+    const HOST_PREF_KEY = hostKey();
+    let cachedPreference = null;
 
     const KNOWN_DARK_HOSTS = new Set([
         'github.com',
@@ -4299,6 +4302,26 @@
         '.media-player',
     ];
 
+    const TONE_SAMPLE_POINTS = [
+        [0.5, 0.5],
+        [0.1, 0.1],
+        [0.9, 0.1],
+        [0.1, 0.9],
+        [0.9, 0.9],
+        [0.5, 0.15],
+        [0.5, 0.85],
+        [0.15, 0.5],
+        [0.85, 0.5],
+        [0.3, 0.3],
+        [0.7, 0.3],
+        [0.3, 0.7],
+        [0.7, 0.7],
+        [0.2, 0.2],
+        [0.8, 0.2],
+        [0.2, 0.8],
+        [0.8, 0.8],
+    ];
+
     function safeGetValue(key, fallback) {
         try {
             if (typeof GM_getValue === 'function') {
@@ -4330,6 +4353,11 @@
 
     function hostKey() {
         return `${MODE_PREF_PREFIX}${location.hostname.toLowerCase()}`;
+    }
+
+    function getPreference() {
+        if (cachedPreference == null) cachedPreference = safeGetValue(HOST_PREF_KEY, "auto");
+        return cachedPreference;
     }
 
     function parseRgb(text) {
@@ -4405,34 +4433,16 @@
     function toneSample() {
         const w = Math.max(window.innerWidth || 1, 1);
         const h = Math.max(window.innerHeight || 1, 1);
-        const points = [
-            [0.5, 0.5],
-            [0.1, 0.1],
-            [0.9, 0.1],
-            [0.1, 0.9],
-            [0.9, 0.9],
-            [0.5, 0.15],
-            [0.5, 0.85],
-            [0.15, 0.5],
-            [0.85, 0.5],
-            [0.3, 0.3],
-            [0.7, 0.3],
-            [0.3, 0.7],
-            [0.7, 0.7],
-            [0.2, 0.2],
-            [0.8, 0.2],
-            [0.2, 0.8],
-            [0.8, 0.8],
-        ];
+        const htmlBg = parseRgb(getComputedStyle(HTML).backgroundColor);
         let darkVotes = 0;
         let lightVotes = 0;
         let votes = 0;
-        for (const [xr, yr] of points) {
+        for (const [xr, yr] of TONE_SAMPLE_POINTS) {
             const x = Math.max(0, Math.min(w - 1, Math.floor(w * xr)));
             const y = Math.max(0, Math.min(h - 1, Math.floor(h * yr)));
             const element = document.elementFromPoint(x, y);
             if (!element) continue;
-            const bg = effectiveColor(element, "backgroundColor") || parseRgb(getComputedStyle(HTML).backgroundColor);
+            const bg = effectiveColor(element, "backgroundColor") || htmlBg;
             const fg = effectiveColor(element, "color") || parseRgb(getComputedStyle(element).color);
             if (!bg || !fg) continue;
             const bgLum = luminance(bg);
@@ -4447,7 +4457,7 @@
     }
 
     function detectMode() {
-        const pref = safeGetValue(hostKey(), "auto");
+        const pref = getPreference();
         if (pref === "enhance" || pref === "invert") return pref;
         const host = location.hostname.toLowerCase();
         if (KNOWN_DARK_HOSTS.has(host)) return "enhance";
@@ -4579,7 +4589,7 @@ html.vm-total-dark[${MODE_ATTR}="invert"] #vm-total-dark-toggle {
     function updateButtonLabel() {
         if (!toggleButton) return;
         const enabled = HTML.classList.contains("vm-total-dark");
-        const pref = safeGetValue(hostKey(), "auto");
+        const pref = getPreference();
         const mode = HTML.getAttribute(MODE_ATTR) || "off";
         toggleButton.textContent = enabled ? "🌙" : "☀️";
         toggleButton.title = enabled
@@ -4601,11 +4611,15 @@ html.vm-total-dark[${MODE_ATTR}="invert"] #vm-total-dark-toggle {
     function queueRecalc() {
         if (recalcQueued) return;
         recalcQueued = true;
-        requestAnimationFrame(() => {
-            recalcQueued = false;
-            applyMode();
-            ensureToggle();
-        });
+        if (recalcTimer) clearTimeout(recalcTimer);
+        recalcTimer = setTimeout(() => {
+            recalcTimer = 0;
+            requestAnimationFrame(() => {
+                recalcQueued = false;
+                applyMode();
+                ensureToggle();
+            });
+        }, 80);
     }
 
     function setEnabled(enabled) {
@@ -4615,10 +4629,11 @@ html.vm-total-dark[${MODE_ATTR}="invert"] #vm-total-dark-toggle {
     }
 
     function cyclePreference() {
-        const current = safeGetValue(hostKey(), "auto");
+        const current = getPreference();
         const idx = MODE_SEQUENCE.indexOf(current);
         const next = MODE_SEQUENCE[(idx + 1) % MODE_SEQUENCE.length];
-        safeSetValue(hostKey(), next);
+        cachedPreference = next;
+        safeSetValue(HOST_PREF_KEY, next);
         applyMode();
     }
 
