@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Total Dark Mode (Violentmonkey)
 // @namespace    https://violentmonkey.github.io/
-// @version      3.0
-// @description  Aggressive whole-page dark mode for nearly every site with a persistent toggle.
+// @version      4.0
+// @description  Universal dark mode using full-page inversion with media correction and a persistent toggle.
 // @match        *://*/*
 // @grant        GM_addStyle
 // @grant        GM_getValue
@@ -18,89 +18,58 @@
     let buttonEl = null;
 
     const baseCSS = `
-        html.vm-total-dark,
+        html.vm-total-dark {
+            background: #111 !important;
+            filter: invert(1) hue-rotate(180deg) !important;
+        }
+
         html.vm-total-dark body {
-            background: #000 !important;
-            color: #e8e8e8 !important;
-            color-scheme: dark !important;
+            background: transparent !important;
         }
 
-        html.vm-total-dark,
-        html.vm-total-dark body,
-        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe):not(:hover):not(:active):not(:focus):not(:focus-within),
-        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe):not(:hover):not(:active):not(:focus):not(:focus-within)::before,
-        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe):not(:hover):not(:active):not(:focus):not(:focus-within)::after {
-            background-color: #0a0a0a !important;
-            background-image: none !important;
-            color: #e8e8e8 !important;
-            border-color: #3a3a3a !important;
-            box-shadow: none !important;
-            text-shadow: none !important;
-            caret-color: #ffffff !important;
+        /* Re-invert media so photos/videos/icons stay natural while page chrome remains dark. */
+        html.vm-total-dark img,
+        html.vm-total-dark video,
+        html.vm-total-dark picture,
+        html.vm-total-dark canvas,
+        html.vm-total-dark svg,
+        html.vm-total-dark [style*="background-image"],
+        html.vm-total-dark [style*="background: url"],
+        html.vm-total-dark [class*="logo" i],
+        html.vm-total-dark [id*="logo" i] {
+            filter: invert(1) hue-rotate(180deg) !important;
         }
 
-        html.vm-total-dark body *:hover,
-        html.vm-total-dark body *:active,
-        html.vm-total-dark body *:focus,
-        html.vm-total-dark body *:focus-within {
-            transition-property: none !important;
-        }
-
-        html.vm-total-dark a,
-        html.vm-total-dark a * {
-            color: #7bb7ff !important;
-        }
-
+        /* Keep native form controls readable and consistent. */
         html.vm-total-dark input,
         html.vm-total-dark textarea,
         html.vm-total-dark select,
         html.vm-total-dark button {
-            background: #111 !important;
-            color: #f3f3f3 !important;
-            border: 1px solid #4a4a4a !important;
+            background-color: #1a1a1a !important;
+            color: #ececec !important;
+            border-color: #4a4a4a !important;
         }
 
         html.vm-total-dark input::placeholder,
         html.vm-total-dark textarea::placeholder {
-            color: #9c9c9c !important;
+            color: #a6a6a6 !important;
         }
 
-        html.vm-total-dark img,
-        html.vm-total-dark video,
-        html.vm-total-dark svg,
-        html.vm-total-dark canvas,
-        html.vm-total-dark picture,
-        html.vm-total-dark iframe {
-            filter: brightness(0.88) contrast(1.1) !important;
-            background: transparent !important;
-        }
-
-        html.vm-total-dark [style*="background-image"]:not(:hover):not(:active):not(:focus):not(:focus-within),
-        html.vm-total-dark [style*="linear-gradient"]:not(:hover):not(:active):not(:focus):not(:focus-within),
-        html.vm-total-dark [style*="radial-gradient"]:not(:hover):not(:active):not(:focus):not(:focus-within) {
-            background-image: none !important;
-            background: #0f0f0f !important;
-        }
-
-        html.vm-total-dark ::selection {
-            background: #225ea8 !important;
-            color: #fff !important;
+        html.vm-total-dark,
+        html.vm-total-dark * {
+            scrollbar-color: #444 #111 !important;
         }
 
         html.vm-total-dark ::-webkit-scrollbar {
             width: 12px !important;
             height: 12px !important;
-            background: #050505 !important;
+            background: #111 !important;
         }
 
         html.vm-total-dark ::-webkit-scrollbar-thumb {
-            background: #3a3a3a !important;
+            background: #444 !important;
             border-radius: 999px !important;
-            border: 2px solid #0a0a0a !important;
-        }
-
-        html.vm-total-dark {
-            scrollbar-color: #3a3a3a #050505 !important;
+            border: 2px solid #111 !important;
         }
 
         #vm-total-dark-toggle {
@@ -121,7 +90,7 @@
             cursor: pointer;
             z-index: 2147483647;
             user-select: none;
-            opacity: 0.7;
+            opacity: 0.75;
             transition: opacity 120ms ease;
         }
 
@@ -129,7 +98,9 @@
             opacity: 1;
         }
 
+        /* Neutralize page inversion so toggle always looks normal. */
         html.vm-total-dark #vm-total-dark-toggle {
+            filter: invert(1) hue-rotate(180deg) !important;
             background: #f0f0f0;
             color: #111;
             border-color: #bbb;
@@ -203,13 +174,9 @@
         buttonEl.title = enabled ? 'Disable dark mode' : 'Enable dark mode';
     }
 
-    const initiallyEnabled = getSavedState();
-    setDarkMode(initiallyEnabled);
+    setDarkMode(getSavedState());
 
     const domObserver = new MutationObserver(() => {
-        if (!document.body || !HTML.classList.contains('vm-total-dark')) {
-            return;
-        }
         ensureToggleButton();
     });
 
@@ -224,5 +191,5 @@
         ensureToggleButton();
     }
 
-    console.log('🌑 Total Dark Mode loaded (Violentmonkey)');
+    console.log('🌑 Total Dark Mode loaded (Violentmonkey v4.0)');
 })();
