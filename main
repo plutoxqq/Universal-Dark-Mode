@@ -1,128 +1,221 @@
 // ==UserScript==
-// @name         Smart Dark Mode
-// @namespace    http://tampermonkey.net/
-// @version      2.1
-// @description  Clean inversion-based dark mode – pure black background, consistent toggle
+// @name         Total Dark Mode (Violentmonkey)
+// @namespace    https://violentmonkey.github.io/
+// @version      3.0
+// @description  Aggressive whole-page dark mode for nearly every site with a persistent toggle.
 // @match        *://*/*
 // @grant        GM_addStyle
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @run-at       document-start
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
-    // ========== SMART DARK MODE (Inversion Method) ==========
-    const darkModeCSS = `
-        /* Invert whole page, set html background to white so it inverts to pure black */
-        html.dark-mode {
-            filter: invert(1) hue-rotate(180deg) !important;
-            background-color: #ffffff !important; /* inverts to #000000 (pure black) */
+    const STORAGE_KEY = 'total-dark-mode-enabled';
+    const HTML = document.documentElement;
+    let buttonEl = null;
+
+    const baseCSS = `
+        html.vm-total-dark,
+        html.vm-total-dark body {
+            background: #000 !important;
+            color: #e8e8e8 !important;
             color-scheme: dark !important;
         }
 
-        /* Body transparent so html background shows */
-        html.dark-mode body {
-            background-color: transparent !important;
+        html.vm-total-dark,
+        html.vm-total-dark body,
+        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe),
+        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe)::before,
+        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe)::after {
+            background-color: #0a0a0a !important;
+            background-image: none !important;
+            color: #e8e8e8 !important;
+            border-color: #3a3a3a !important;
+            box-shadow: none !important;
+            text-shadow: none !important;
+            caret-color: #ffffff !important;
         }
 
-        /* Revert images, videos, and other media */
-        html.dark-mode img,
-        html.dark-mode video,
-        html.dark-mode iframe,
-        html.dark-mode canvas,
-        html.dark-mode svg,
-        html.dark-mode [style*="background-image"] {
-            filter: invert(1) hue-rotate(180deg) !important;
+        html.vm-total-dark a,
+        html.vm-total-dark a * {
+            color: #7bb7ff !important;
         }
 
-        /* Custom scrollbar – pure black/dark gray for consistency */
-        html.dark-mode::-webkit-scrollbar {
-            width: 14px !important;
-            height: 14px !important;
-            background-color: #000000 !important;
-        }
-        html.dark-mode::-webkit-scrollbar-track {
-            background-color: #000000 !important;
-        }
-        html.dark-mode::-webkit-scrollbar-thumb {
-            background-color: #333333 !important;
-            border-radius: 7px !important;
-            border: 3px solid #000000 !important;
-        }
-        html.dark-mode::-webkit-scrollbar-thumb:hover {
-            background-color: #555555 !important;
+        html.vm-total-dark input,
+        html.vm-total-dark textarea,
+        html.vm-total-dark select,
+        html.vm-total-dark button {
+            background: #111 !important;
+            color: #f3f3f3 !important;
+            border: 1px solid #4a4a4a !important;
         }
 
-        /* Firefox scrollbar */
-        html.dark-mode {
-            scrollbar-color: #333333 #000000 !important;
-            scrollbar-width: auto !important;
+        html.vm-total-dark input::placeholder,
+        html.vm-total-dark textarea::placeholder {
+            color: #9c9c9c !important;
         }
 
-        /* Keep toggle button appearance normal (double‑invert) */
-        html.dark-mode #smart-dark-mode-toggle {
-            filter: invert(1) hue-rotate(180deg) !important;
+        html.vm-total-dark img,
+        html.vm-total-dark video,
+        html.vm-total-dark svg,
+        html.vm-total-dark canvas,
+        html.vm-total-dark picture,
+        html.vm-total-dark iframe {
+            filter: brightness(0.88) contrast(1.1) !important;
+            background: transparent !important;
+        }
+
+        html.vm-total-dark [style*="background-image"],
+        html.vm-total-dark [style*="linear-gradient"],
+        html.vm-total-dark [style*="radial-gradient"] {
+            background-image: none !important;
+            background: #0f0f0f !important;
+        }
+
+        html.vm-total-dark ::selection {
+            background: #225ea8 !important;
+            color: #fff !important;
+        }
+
+        html.vm-total-dark ::-webkit-scrollbar {
+            width: 12px !important;
+            height: 12px !important;
+            background: #050505 !important;
+        }
+
+        html.vm-total-dark ::-webkit-scrollbar-thumb {
+            background: #3a3a3a !important;
+            border-radius: 999px !important;
+            border: 2px solid #0a0a0a !important;
+        }
+
+        html.vm-total-dark {
+            scrollbar-color: #3a3a3a #050505 !important;
+        }
+
+        #vm-total-dark-toggle {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: #111;
+            color: #fff;
+            border: 1px solid #555;
+            font-size: 20px;
+            line-height: 1;
+            cursor: pointer;
+            z-index: 2147483647;
+            user-select: none;
+            opacity: 0.7;
+            transition: opacity 120ms ease;
+        }
+
+        #vm-total-dark-toggle:hover {
+            opacity: 1;
+        }
+
+        html.vm-total-dark #vm-total-dark-toggle {
+            background: #f0f0f0;
+            color: #111;
+            border-color: #bbb;
         }
     `;
 
-    GM_addStyle(darkModeCSS);
+    GM_addStyle(baseCSS);
 
-    // Toggle function
-    function toggleDarkMode(enable) {
-        if (enable) {
-            document.documentElement.classList.add('dark-mode');
-        } else {
-            document.documentElement.classList.remove('dark-mode');
+    function getSavedState() {
+        try {
+            if (typeof GM_getValue === 'function') {
+                return GM_getValue(STORAGE_KEY, true);
+            }
+        } catch (_) {
+            // ignore and fallback
+        }
+
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            return raw == null ? true : raw === 'true';
+        } catch (_) {
+            return true;
         }
     }
 
-    // Start with dark mode on
-    setTimeout(() => toggleDarkMode(true), 10);
+    function saveState(enabled) {
+        try {
+            if (typeof GM_setValue === 'function') {
+                GM_setValue(STORAGE_KEY, enabled);
+                return;
+            }
+        } catch (_) {
+            // ignore and fallback
+        }
 
-    // ========== SIMPLE TOGGLE BUTTON ==========
-    const toggle = document.createElement('div');
-    toggle.id = 'smart-dark-mode-toggle';   // for double‑invert rule
-    toggle.innerHTML = '🌓';
-    toggle.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        width: 40px;
-        height: 40px;
-        background: #333;
-        color: #fff;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 20px;
-        cursor: pointer;
-        z-index: 999999;
-        border: 1px solid #555;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-        opacity: 0.6;
-        transition: opacity 0.2s;
-        user-select: none;
-    `;
-
-    toggle.onmouseover = () => toggle.style.opacity = '1';
-    toggle.onmouseout = () => toggle.style.opacity = '0.6';
-
-    toggle.onclick = () => {
-        const isDark = document.documentElement.classList.contains('dark-mode');
-        toggleDarkMode(!isDark);
-        toggle.innerHTML = !isDark ? '🌓' : '☀️';
-    };
-
-    // Append when body is ready
-    function appendToggle() {
-        if (document.body) {
-            document.body.appendChild(toggle);
-        } else {
-            setTimeout(appendToggle, 50);
+        try {
+            localStorage.setItem(STORAGE_KEY, String(enabled));
+        } catch (_) {
+            // ignored
         }
     }
-    appendToggle();
 
-    console.log('🌙 Smart Dark Mode active – pure black background and stable toggle');
+    function setDarkMode(enabled) {
+        HTML.classList.toggle('vm-total-dark', enabled);
+        saveState(enabled);
+
+        if (buttonEl) {
+            buttonEl.textContent = enabled ? '🌙' : '☀️';
+            buttonEl.title = enabled ? 'Disable dark mode' : 'Enable dark mode';
+        }
+    }
+
+    function ensureToggleButton() {
+        if (!document.body || document.getElementById('vm-total-dark-toggle')) {
+            return;
+        }
+
+        buttonEl = document.createElement('button');
+        buttonEl.id = 'vm-total-dark-toggle';
+        buttonEl.type = 'button';
+        buttonEl.setAttribute('aria-label', 'Toggle dark mode');
+        buttonEl.addEventListener('click', () => {
+            const enabled = HTML.classList.contains('vm-total-dark');
+            setDarkMode(!enabled);
+        });
+
+        document.body.appendChild(buttonEl);
+
+        const enabled = HTML.classList.contains('vm-total-dark');
+        buttonEl.textContent = enabled ? '🌙' : '☀️';
+        buttonEl.title = enabled ? 'Disable dark mode' : 'Enable dark mode';
+    }
+
+    const initiallyEnabled = getSavedState();
+    setDarkMode(initiallyEnabled);
+
+    const domObserver = new MutationObserver(() => {
+        if (!document.body || !HTML.classList.contains('vm-total-dark')) {
+            return;
+        }
+        ensureToggleButton();
+    });
+
+    domObserver.observe(document.documentElement, {
+        childList: true,
+        subtree: true,
+    });
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', ensureToggleButton, { once: true });
+    } else {
+        ensureToggleButton();
+    }
+
+    console.log('🌑 Total Dark Mode loaded (Violentmonkey)');
 })();
