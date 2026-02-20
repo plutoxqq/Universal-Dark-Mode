@@ -27,9 +27,9 @@
 
         html.vm-total-dark,
         html.vm-total-dark body,
-        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe),
-        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe)::before,
-        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe)::after {
+        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe):not(:hover):not(:active):not(:focus):not(:focus-within),
+        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe):not(:hover):not(:active):not(:focus):not(:focus-within)::before,
+        html.vm-total-dark body *:not(video):not(img):not(svg):not(canvas):not(picture):not(iframe):not(:hover):not(:active):not(:focus):not(:focus-within)::after {
             background-color: #0a0a0a !important;
             background-image: none !important;
             color: #e8e8e8 !important;
@@ -37,6 +37,13 @@
             box-shadow: none !important;
             text-shadow: none !important;
             caret-color: #ffffff !important;
+        }
+
+        html.vm-total-dark body *:hover,
+        html.vm-total-dark body *:active,
+        html.vm-total-dark body *:focus,
+        html.vm-total-dark body *:focus-within {
+            transition-property: none !important;
         }
 
         html.vm-total-dark a,
@@ -68,9 +75,9 @@
             background: transparent !important;
         }
 
-        html.vm-total-dark [style*="background-image"],
-        html.vm-total-dark [style*="linear-gradient"],
-        html.vm-total-dark [style*="radial-gradient"] {
+        html.vm-total-dark [style*="background-image"]:not(:hover):not(:active):not(:focus):not(:focus-within),
+        html.vm-total-dark [style*="linear-gradient"]:not(:hover):not(:active):not(:focus):not(:focus-within),
+        html.vm-total-dark [style*="radial-gradient"]:not(:hover):not(:active):not(:focus):not(:focus-within) {
             background-image: none !important;
             background: #0f0f0f !important;
         }
