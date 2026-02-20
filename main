@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Total Dark Mode (Violentmonkey)
 // @namespace    https://violentmonkey.github.io/
-// @version      5.0
-// @description  Universal dark mode with smart auto-detection (keeps already-dark sites dark) and a persistent toggle.
+// @version      6.0
+// @description  Universal dark mode with smarter detection, per-site mode override, and robust UI/media handling.
 // @match        *://*/*
 // @grant        GM_addStyle
 // @grant        GM_getValue
@@ -14,11 +14,20 @@
     'use strict';
 
     const STORAGE_KEY = 'total-dark-mode-enabled';
+    const MODE_PREF_PREFIX = 'total-dark-mode-preference:';
     const MODE_ATTR = 'data-vm-total-dark-mode';
     const HTML = document.documentElement;
+    const MODE_SEQUENCE = ['auto', 'invert', 'enhance'];
+
     let buttonEl = null;
+    let scheduledRecalc = false;
 
     const baseCSS = `
+        html.vm-total-dark {
+            color-scheme: dark !important;
+            scrollbar-color: #4a4a4a #111 !important;
+        }
+
         html.vm-total-dark[${MODE_ATTR}="invert"] {
             background: #111 !important;
             filter: invert(1) hue-rotate(180deg) !important;
@@ -28,12 +37,13 @@
             background: transparent !important;
         }
 
-        /* Re-invert media so photos/videos/logos stay natural when page inversion is active. */
+        /* Re-invert media so photos/videos/logos keep natural colors in invert mode. */
         html.vm-total-dark[${MODE_ATTR}="invert"] img,
         html.vm-total-dark[${MODE_ATTR}="invert"] video,
         html.vm-total-dark[${MODE_ATTR}="invert"] picture,
         html.vm-total-dark[${MODE_ATTR}="invert"] canvas,
         html.vm-total-dark[${MODE_ATTR}="invert"] svg,
+        html.vm-total-dark[${MODE_ATTR}="invert"] iframe,
         html.vm-total-dark[${MODE_ATTR}="invert"] [style*="background-image"],
         html.vm-total-dark[${MODE_ATTR}="invert"] [style*="background: url"],
         html.vm-total-dark[${MODE_ATTR}="invert"] [class*="logo" i],
@@ -41,9 +51,7 @@
             filter: invert(1) hue-rotate(180deg) !important;
         }
 
-        /* Already-dark pages: do NOT invert content, just enforce dark-friendly controls. */
         html.vm-total-dark[${MODE_ATTR}="enhance"] {
-            color-scheme: dark !important;
             background: #111 !important;
         }
 
@@ -51,33 +59,18 @@
             background: transparent !important;
         }
 
-        html.vm-total-dark[${MODE_ATTR}="enhance"] a {
-            color: #8ab4f8 !important;
-        }
-
-        html.vm-total-dark[${MODE_ATTR}="enhance"] a:visited {
-            color: #c58af9 !important;
-        }
-
-        /* Keep native form controls readable and consistent. */
+        /* Normalize controls without flattening every site style. */
         html.vm-total-dark input,
         html.vm-total-dark textarea,
         html.vm-total-dark select,
         html.vm-total-dark button,
         html.vm-total-dark [role="button"] {
-            background-color: #1a1a1a !important;
-            color: #ececec !important;
-            border-color: #4a4a4a !important;
+            color-scheme: dark !important;
         }
 
         html.vm-total-dark input::placeholder,
         html.vm-total-dark textarea::placeholder {
-            color: #a6a6a6 !important;
-        }
-
-        html.vm-total-dark,
-        html.vm-total-dark * {
-            scrollbar-color: #444 #111 !important;
+            color: #9a9a9a !important;
         }
 
         html.vm-total-dark ::-webkit-scrollbar {
@@ -87,7 +80,7 @@
         }
 
         html.vm-total-dark ::-webkit-scrollbar-thumb {
-            background: #444 !important;
+            background: #4a4a4a !important;
             border-radius: 999px !important;
             border: 2px solid #111 !important;
         }
@@ -105,12 +98,12 @@
             background: #111;
             color: #fff;
             border: 1px solid #555;
-            font-size: 20px;
+            font-size: 18px;
             line-height: 1;
             cursor: pointer;
             z-index: 2147483647;
             user-select: none;
-            opacity: 0.75;
+            opacity: 0.78;
             transition: opacity 120ms ease;
         }
 
@@ -118,7 +111,7 @@
             opacity: 1;
         }
 
-        /* Neutralize page inversion so toggle always looks normal. */
+        /* Neutralize inversion for the floating button only when page is inverted. */
         html.vm-total-dark[${MODE_ATTR}="invert"] #vm-total-dark-toggle {
             filter: invert(1) hue-rotate(180deg) !important;
             background: #f0f0f0;
@@ -165,8 +158,210 @@
         try {
             localStorage.setItem(STORAGE_KEY, String(enabled));
         } catch (_) {
-            // ignored
+            // ignore
         }
+    }
+
+    function modeStorageKey() {
+        return `${MODE_PREF_PREFIX}${location.hostname}`;
+    }
+
+    function getModePreference() {
+        try {
+            if (typeof GM_getValue === 'function') {
+                return GM_getValue(modeStorageKey(), 'auto');
+            }
+        } catch (_) {
+            // ignore and fallback
+        }
+
+        try {
+            return localStorage.getItem(modeStorageKey()) || 'auto';
+        } catch (_) {
+            return 'auto';
+        }
+    }
+
+    function saveModePreference(mode) {
+        try {
+            if (typeof GM_setValue === 'function') {
+                GM_setValue(modeStorageKey(), mode);
+                return;
+            }
+        } catch (_) {
+            // ignore and fallback
+        }
+
+        try {
+            localStorage.setItem(modeStorageKey(), mode);
+        } catch (_) {
+            // ignore
+        }
+    }
+
+    function parseRgbTriplet(colorText) {
+        if (!colorText) {
+            return null;
+        }
+
+        const match = colorText.match(/rgba?\(([^)]+)\)/i);
+        if (!match) {
+            return null;
+        }
+
+        const channels = match[1].split(',').map((v) => Number.parseFloat(v.trim()));
+        if (channels.length < 3 || channels.slice(0, 3).some((v) => Number.isNaN(v))) {
+            return null;
+        }
+
+        return [channels[0], channels[1], channels[2]];
+    }
+
+    function relativeLuminance([r, g, b]) {
+        const srgb = [r, g, b].map((v) => v / 255).map((c) => (
+            c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+        ));
+        return (0.2126 * srgb[0]) + (0.7152 * srgb[1]) + (0.0722 * srgb[2]);
+    }
+
+    function getEffectiveColor(el, propName) {
+        let node = el;
+        while (node && node.nodeType === Node.ELEMENT_NODE) {
+            const value = getComputedStyle(node)[propName];
+            const rgb = parseRgbTriplet(value);
+            if (rgb && relativeLuminance(rgb) >= 0) {
+                const alpha = value.match(/rgba\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\)/i);
+                if (!alpha || Number.parseFloat(alpha[1]) > 0.02) {
+                    return rgb;
+                }
+            }
+
+            node = node.parentElement;
+        }
+
+        return null;
+    }
+
+    function detectDarkBySamples() {
+        const width = Math.max(window.innerWidth || 0, 1);
+        const height = Math.max(window.innerHeight || 0, 1);
+        const points = [
+            [0.5, 0.5],
+            [0.25, 0.25],
+            [0.75, 0.25],
+            [0.25, 0.75],
+            [0.75, 0.75],
+            [0.1, 0.5],
+            [0.9, 0.5],
+        ];
+
+        let darkVotes = 0;
+        let totalVotes = 0;
+
+        for (const [xRatio, yRatio] of points) {
+            const x = Math.floor(width * xRatio);
+            const y = Math.floor(height * yRatio);
+            const el = document.elementFromPoint(x, y);
+            if (!el) {
+                continue;
+            }
+
+            const bg = getEffectiveColor(el, 'backgroundColor') || parseRgbTriplet(getComputedStyle(HTML).backgroundColor);
+            const fg = getEffectiveColor(el, 'color') || parseRgbTriplet(getComputedStyle(el).color);
+            if (!bg || !fg) {
+                continue;
+            }
+
+            totalVotes += 1;
+            const bgLum = relativeLuminance(bg);
+            const fgLum = relativeLuminance(fg);
+
+            if (bgLum < 0.42 && fgLum > bgLum) {
+                darkVotes += 1;
+            }
+        }
+
+        if (totalVotes < 2) {
+            return null;
+        }
+
+        return darkVotes / totalVotes;
+    }
+
+    function classifyPageTone() {
+        const preference = getModePreference();
+        if (preference === 'invert' || preference === 'enhance') {
+            return preference;
+        }
+
+        const meta = document.querySelector('meta[name="color-scheme"]');
+        if (meta) {
+            const content = String(meta.content || '').toLowerCase();
+            if (content.includes('dark') && !content.includes('light')) {
+                return 'enhance';
+            }
+        }
+
+        const htmlScheme = getComputedStyle(HTML).colorScheme;
+        const bodyScheme = document.body ? getComputedStyle(document.body).colorScheme : '';
+        if ((htmlScheme && htmlScheme.includes('dark')) || (bodyScheme && bodyScheme.includes('dark'))) {
+            return 'enhance';
+        }
+
+        const sampledDarkRatio = detectDarkBySamples();
+        if (sampledDarkRatio != null) {
+            return sampledDarkRatio >= 0.55 ? 'enhance' : 'invert';
+        }
+
+        const htmlBg = parseRgbTriplet(getComputedStyle(HTML).backgroundColor);
+        const bodyBg = document.body ? parseRgbTriplet(getComputedStyle(document.body).backgroundColor) : null;
+        const luminances = [htmlBg, bodyBg].filter(Boolean).map(relativeLuminance);
+        if (luminances.length === 0) {
+            return 'invert';
+        }
+
+        const avg = luminances.reduce((sum, l) => sum + l, 0) / luminances.length;
+        return avg < 0.35 ? 'enhance' : 'invert';
+    }
+
+    function updateButtonState() {
+        if (!buttonEl) {
+            return;
+        }
+
+        const enabled = HTML.classList.contains('vm-total-dark');
+        const pref = getModePreference();
+        const mode = HTML.getAttribute(MODE_ATTR) || 'off';
+
+        buttonEl.textContent = enabled ? '🌙' : '☀️';
+        buttonEl.title = enabled
+            ? `Disable dark mode\nMode: ${mode} (${pref})\nRight-click: cycle auto/invert/enhance for this site`
+            : 'Enable dark mode';
+    }
+
+    function applyBestMode() {
+        if (!HTML.classList.contains('vm-total-dark')) {
+            HTML.removeAttribute(MODE_ATTR);
+            updateButtonState();
+            return;
+        }
+
+        const mode = classifyPageTone();
+        HTML.setAttribute(MODE_ATTR, mode);
+        updateButtonState();
+    }
+
+    function scheduleRecalc() {
+        if (scheduledRecalc) {
+            return;
+        }
+
+        scheduledRecalc = true;
+        requestAnimationFrame(() => {
+            scheduledRecalc = false;
+            applyBestMode();
+            ensureToggleButton();
+        });
     }
 
     function parseRgbTriplet(colorText) {
@@ -233,11 +428,15 @@
         HTML.classList.toggle('vm-total-dark', enabled);
         applyBestMode();
         saveState(enabled);
+        applyBestMode();
+    }
 
-        if (buttonEl) {
-            buttonEl.textContent = enabled ? '🌙' : '☀️';
-            buttonEl.title = enabled ? 'Disable dark mode' : 'Enable dark mode';
-        }
+    function cycleModePreference() {
+        const current = getModePreference();
+        const index = MODE_SEQUENCE.indexOf(current);
+        const next = MODE_SEQUENCE[(index + 1) % MODE_SEQUENCE.length];
+        saveModePreference(next);
+        applyBestMode();
     }
 
     function ensureToggleButton() {
@@ -249,28 +448,32 @@
         buttonEl.id = 'vm-total-dark-toggle';
         buttonEl.type = 'button';
         buttonEl.setAttribute('aria-label', 'Toggle dark mode');
+
         buttonEl.addEventListener('click', () => {
             const enabled = HTML.classList.contains('vm-total-dark');
             setDarkMode(!enabled);
         });
 
-        document.body.appendChild(buttonEl);
+        buttonEl.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+            cycleModePreference();
+        });
 
-        const enabled = HTML.classList.contains('vm-total-dark');
-        buttonEl.textContent = enabled ? '🌙' : '☀️';
-        buttonEl.title = enabled ? 'Disable dark mode' : 'Enable dark mode';
+        document.body.appendChild(buttonEl);
+        updateButtonState();
     }
 
     setDarkMode(getSavedState());
 
     const domObserver = new MutationObserver(() => {
-        applyBestMode();
-        ensureToggleButton();
+        scheduleRecalc();
     });
 
     domObserver.observe(document.documentElement, {
         childList: true,
         subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style'],
     });
 
     if (document.readyState === 'loading') {
@@ -284,6 +487,7 @@
     }
 
     window.addEventListener('load', applyBestMode, { once: true });
+    window.addEventListener('resize', scheduleRecalc);
 
-    console.log('🌑 Total Dark Mode loaded (Violentmonkey v5.0)');
+    console.log('🌑 Total Dark Mode loaded (Violentmonkey v6.0)');
 })();
