@@ -118,6 +118,12 @@
             color: #111;
             border-color: #bbb;
         }
+
+        html.vm-total-dark[${MODE_ATTR}="enhance"] #vm-total-dark-toggle {
+            background: #111;
+            color: #fff;
+            border-color: #555;
+        }
     `;
 
     GM_addStyle(baseCSS);
@@ -358,8 +364,69 @@
         });
     }
 
+    function parseRgbTriplet(colorText) {
+        if (!colorText) {
+            return null;
+        }
+
+        const match = colorText.match(/rgba?\(([^)]+)\)/i);
+        if (!match) {
+            return null;
+        }
+
+        const channels = match[1].split(',').map((v) => Number.parseFloat(v.trim()));
+        if (channels.length < 3 || channels.some((v) => Number.isNaN(v))) {
+            return null;
+        }
+
+        return [channels[0], channels[1], channels[2]];
+    }
+
+    function relativeLuminance([r, g, b]) {
+        const srgb = [r, g, b].map((v) => v / 255).map((c) => (
+            c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+        ));
+        return (0.2126 * srgb[0]) + (0.7152 * srgb[1]) + (0.0722 * srgb[2]);
+    }
+
+    function classifyPageTone() {
+        const colorSchemeMeta = document.querySelector('meta[name="color-scheme"]');
+        if (colorSchemeMeta && /dark/i.test(colorSchemeMeta.content || '')) {
+            return 'enhance';
+        }
+
+        const sampleTargets = [document.body, document.documentElement].filter(Boolean);
+        const luminances = [];
+
+        for (const el of sampleTargets) {
+            const styles = getComputedStyle(el);
+            const bg = parseRgbTriplet(styles.backgroundColor);
+            if (bg) {
+                luminances.push(relativeLuminance(bg));
+            }
+        }
+
+        if (luminances.length === 0) {
+            return 'invert';
+        }
+
+        const avg = luminances.reduce((sum, l) => sum + l, 0) / luminances.length;
+        return avg < 0.35 ? 'enhance' : 'invert';
+    }
+
+    function applyBestMode() {
+        if (!HTML.classList.contains('vm-total-dark')) {
+            HTML.removeAttribute(MODE_ATTR);
+            return;
+        }
+
+        const mode = classifyPageTone();
+        HTML.setAttribute(MODE_ATTR, mode);
+    }
+
     function setDarkMode(enabled) {
         HTML.classList.toggle('vm-total-dark', enabled);
+        applyBestMode();
         saveState(enabled);
         applyBestMode();
     }
