@@ -4477,7 +4477,7 @@
     function buildStyleCss() {
         const surfaceCss = selectorsToCss(SURFACE_SELECTORS, `background-color: ${COLOR_BG} !important; color: ${COLOR_TEXT} !important; border-color: ${COLOR_BORDER} !important;`);
         const interactiveCss = selectorsToCss(INTERACTIVE_SELECTORS, `background-color: ${COLOR_PANEL} !important; color: ${COLOR_TEXT} !important; border-color: ${COLOR_BORDER} !important;`);
-        const mediaSelectorGroup = MEDIA_REINVERT_SELECTORS.join("\n");
+        const mediaSelectorGroup = MEDIA_REINVERT_SELECTORS.join(",\n");
         return `
 html.vm-total-dark {
     color-scheme: dark !important;
@@ -4489,6 +4489,31 @@ html.vm-total-dark body {
 html.vm-total-dark a { color: ${COLOR_LINK} !important; }
 html.vm-total-dark a:visited { color: ${COLOR_VISITED} !important; }
 html.vm-total-dark a:hover, html.vm-total-dark a:focus { color: ${COLOR_LINK_HOVER} !important; }
+html.vm-total-dark[${MODE_ATTR}="enhance"] p,
+html.vm-total-dark[${MODE_ATTR}="enhance"] li,
+html.vm-total-dark[${MODE_ATTR}="enhance"] span,
+html.vm-total-dark[${MODE_ATTR}="enhance"] strong,
+html.vm-total-dark[${MODE_ATTR}="enhance"] em,
+html.vm-total-dark[${MODE_ATTR}="enhance"] label,
+html.vm-total-dark[${MODE_ATTR}="enhance"] small,
+html.vm-total-dark[${MODE_ATTR}="enhance"] figcaption,
+html.vm-total-dark[${MODE_ATTR}="enhance"] time,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .description,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .subtitle,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .meta,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .byline,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .secondary-text,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .muted,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .text-muted {
+    color: #d2d8e4 !important;
+}
+html.vm-total-dark[${MODE_ATTR}="enhance"] small,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .meta,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .byline,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .muted,
+html.vm-total-dark[${MODE_ATTR}="enhance"] .text-muted {
+    color: #bfc7d6 !important;
+}
 html.vm-total-dark input,
 html.vm-total-dark select,
 html.vm-total-dark textarea,
@@ -4496,7 +4521,13 @@ html.vm-total-dark button,
 html.vm-total-dark [role="button"] {
     color-scheme: dark !important;
 }
-html.vm-total-dark ::placeholder { color: #95a0af !important; }
+html.vm-total-dark ::placeholder { color: #a9b3c3 !important; }
+html.vm-total-dark[${MODE_ATTR}="enhance"] input,
+html.vm-total-dark[${MODE_ATTR}="enhance"] textarea,
+html.vm-total-dark[${MODE_ATTR}="enhance"] select {
+    color: #e3e9f3 !important;
+    background-color: #171d27 !important;
+}
 html.vm-total-dark ::-webkit-scrollbar { width: 13px !important; height: 13px !important; background: #0d1014 !important; }
 html.vm-total-dark ::-webkit-scrollbar-thumb { background: #515a69 !important; border: 2px solid #0d1014 !important; border-radius: 999px !important; }
 html.vm-total-dark ::-webkit-scrollbar-corner { background: #0d1014 !important; }
